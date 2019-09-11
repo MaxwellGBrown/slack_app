@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Example slack api app
+
+Globals:
+  Function:
+    Timeout: 3
+
+Parameters:
+  SigningSecret:
+    Description: Slack App Signing Secret
+    Type: String
+
+Resources:
+  SlackAppApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      Auth:
+        DefaultAuthorizer: SlackAppAuthorizer
+        Authorizers:
+          SlackAppAuthorizer:
+            FunctionPayloadType: REQUEST
+            FunctionArn: !GetAtt SlackAppAuthorizerLambda.Arn
+            Identity:
+              Headers:
+                - "X-Slack-Signature"
+                - "X-Slack-Request-Timestamp"
+
+  SlackAppAuthorizerLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: slack_app.authorizer.lambda_handler
+      Runtime: python3.7
+      Environment:
+        Variables:
+          SIGNING_SECRET: !Ref SigningSecret
+
+  SlackAppAPILambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      AutoPublishAlias: Prod
+      Handler: slack_app.app.lambda_handler
+      Runtime: python3.7
+      Events:
+        GetIndex:
+          Type: Api
+          Properties:
+            RestApiId: !Ref SlackAppApi
+            Method: post
+            Path: /
+
+Outputs:
+  SlackAppApi:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${SlackAppApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  SlackAppAPILambda:
+    Description: "SlackAppAPILambda Function ARN"
+    Value: !GetAtt SlackAppAPILambda.Arn
+  SlackAppAuthorizerLambda:
+    Description: "SlackAppAuthorizer Lambda Function ARN"
+    Value: !GetAtt SlackAppAuthorizerLambda.Arn
