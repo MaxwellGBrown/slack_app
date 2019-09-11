@@ -17,25 +17,6 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: Prod
-      Auth:
-        DefaultAuthorizer: SlackAppAuthorizer
-        Authorizers:
-          SlackAppAuthorizer:
-            FunctionPayloadType: REQUEST
-            FunctionArn: !GetAtt SlackAppAuthorizerLambda.Arn
-            Identity:
-              Headers:
-                - "X-Slack-Signature"
-                - "X-Slack-Request-Timestamp"
-
-  SlackAppAuthorizerLambda:
-    Type: AWS::Serverless::Function
-    Properties:
-      Handler: slack_app.authorizer.lambda_handler
-      Runtime: python3.7
-      Environment:
-        Variables:
-          SIGNING_SECRET: !Ref SigningSecret
 
   SlackAppAPILambda:
     Type: AWS::Serverless::Function
@@ -43,6 +24,9 @@ Resources:
       AutoPublishAlias: Prod
       Handler: slack_app.app.lambda_handler
       Runtime: python3.7
+      Environment:
+        Variables:
+          SIGNING_SECRET: !Ref SigningSecret
       Events:
         GetIndex:
           Type: Api
@@ -58,6 +42,3 @@ Outputs:
   SlackAppAPILambda:
     Description: "SlackAppAPILambda Function ARN"
     Value: !GetAtt SlackAppAPILambda.Arn
-  SlackAppAuthorizerLambda:
-    Description: "SlackAppAuthorizer Lambda Function ARN"
-    Value: !GetAtt SlackAppAuthorizerLambda.Arn

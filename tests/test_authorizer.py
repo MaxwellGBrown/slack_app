@@ -86,7 +86,11 @@ def test_SlackAuthenticationCheck_failures(signing_secret, request_dict, body,
         check(request_dict)
 
 
-@pytest.mark.parametrize("age_in_seconds", [60 * 5, 60 * 10, 60 * 1000000])
+@pytest.mark.parametrize("age_in_seconds", [
+    (60 * 5) + 1,
+    60 * 10,
+    60 * 1000000,
+])
 def test_SlackAuthenticationCheck_old_request_timestamp(
     age_in_seconds,
     signing_secret,

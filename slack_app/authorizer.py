@@ -1,34 +1,7 @@
 """Authentication checks for Lambda API gateway requests."""
 from hashlib import sha256
 import hmac
-import os
 import time
-
-
-def lambda_handler(event, context):
-    """Handle Request-tye API Gateway Authorizer events."""
-    print(event)
-    signing_secret = os.environ.get("SIGNING_SECRET")
-    check = SlackAuthenticationCheck(signing_secret)
-    check(event)
-
-    *_, region, aws_account_id, api_gateway_arn = event["methodArn"].split(":")
-    return {
-        "principalId": "user_id",  # TODO
-        "policyDocument": {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Action": "executte-api:Invoke",
-                    "Effect": "Allow",
-                    "Resource": [
-                        f"arn:aws:execute-api:{region}:"
-                        f"{aws_account_id}:*/*/ALL/*",
-                    ],
-                }
-            ]
-        },
-    }
 
 
 class ForbiddenException(Exception):
