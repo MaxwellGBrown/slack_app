@@ -1,14 +1,14 @@
 """Tests for complaint_counter.py."""
 from hashlib import sha256
 import hmac
-import os
 import time
 from unittest.mock import Mock
 from urllib.parse import urlencode
 
 import pytest
 
-from slack_app.app import lambda_handler
+from slack_app.app import App
+from slack_app.authorizer import ForbiddenException
 
 
 def make_request(body=None, headers=None, *, secret=None, timestamp=None):
@@ -61,23 +61,33 @@ def make_request(body=None, headers=None, *, secret=None, timestamp=None):
     }
 
 
-@pytest.fixture(autouse=True)
-def environment_variables(monkeypatch):
-    """Set environment variables to be expected by the AWS Lambda handler."""
-    environment = {"SIGNING_SECRET": "8f742231b10e8888abcd99yyyzzz85a5"}
-    monkeypatch.setattr(os, 'environ', environment)
-
-
 @pytest.fixture
 def auth_check():
     """Mock out and return an auth check to be injected into lambda_handler."""
-    auth_check = Mock()
-    auth_check.return_value = None  # by default, do nothing
+    auth_check = Mock(return_value=None)
     return auth_check
 
 
-def test_lambda_handler_returns_200(auth_check):
+@pytest.fixture
+def app(auth_check):
+    """Return an instance of App() with stubs."""
+    app = App()
+    app.auth_check = auth_check
+    return app
+
+
+def test_app_returns_200(app):
     """Test that lambda_handler returns a 200 status code."""
     request = make_request()
-    response = lambda_handler(request, None, auth_check=auth_check)
+    response = app(request, None)
     assert response['statusCode'] == 200
+
+
+def test_app_returns_403_with_failed_auth_check(app):
+    """Test that lambda_handler returns a 403 when auth_check raises."""
+    auth_check = Mock(side_effect=ForbiddenException())
+    app.auth_check = auth_check
+
+    request = make_request()
+    response = app(request, None)
+    assert response["statusCode"] == 403
