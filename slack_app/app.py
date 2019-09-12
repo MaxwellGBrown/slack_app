@@ -59,4 +59,7 @@ class App:
 
     def slash_command(self, command_name, command):
         """Register a command to be called."""
+        if command_name[0] != "/":
+            raise ValueError(f"command_name {command_name:!r} must begin with "
+                             "a leading slash.")
         self._commands[command_name] = command

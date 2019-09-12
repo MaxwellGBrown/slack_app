@@ -1,4 +1,5 @@
 """Tests for complaint_counter.py."""
+import contextlib
 from hashlib import sha256
 import hmac
 import time
@@ -111,3 +112,18 @@ def test_app_routes_registered_slash_commands(app, command):
     event = make_request({"command": command})
     app(event, None)
     command_fxn.assert_called_once()
+
+
+@pytest.mark.parametrize("command,success", [
+    ("wrong", False),
+    ("bad", False),
+    ("/good", True),
+])
+def test_app_slash_command_requires_leading_slash(app, command, success):
+    """Assert App.slash_command() requires leading slashes.
+
+    Incoming Command: Assert public side effect.
+    """
+    context = pytest.raises(ValueError) if not success else contextlib.nullcontext()  # noqa
+    with context:
+        app.slash_command(command, Mock())
