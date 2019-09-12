@@ -7,10 +7,11 @@ Tests in here are built using the example from the slack API documentation:
 from hashlib import sha256
 import hmac
 import time
+from unittest.mock import MagicMock
 
 import pytest
 
-from slack_app import authorizer
+from slack_app.authorizer import SlackAuthenticationCheck
 
 
 TIMESTAMP = 1531420618
@@ -30,12 +31,13 @@ def timestamp(monkeypatch):
 
 
 @pytest.fixture()
-def request_dict(signing_secret, timestamp):
+def event(signing_secret, timestamp):
     """Return request associated with slack authentication example."""
     headers = {
         "X-Slack-Signature": "v0=a2114d57b48eac39b9ad189dd8316235a7b4a8d21a10b"
                              "d27519666489c69b503",
         "X-Slack-Request-Timestamp": str(timestamp),
+        "Content-Type": "x-www-form-urlencoded",
     }
 
     body = "token=xyzz0WbapA4vBCDEFasx0q6G&team_id=T1DC2JH3J&team_domain=tes" \
@@ -48,42 +50,69 @@ def request_dict(signing_secret, timestamp):
     return {"body": body, "headers": headers}
 
 
-def test_SlackAuthenticationCheck_slack_example(signing_secret, request_dict):
-    """Tests that the exact slack example returns a 200."""
-    check = authorizer.SlackAuthenticationCheck(signing_secret)
-
-    try:
-        check(request_dict)
-    except authorizer.ForbiddenException:
-        pytest.fail("Request failed authentication but should have passed.")
+@pytest.fixture()
+def context():
+    """Lambda event context."""
+    return MagicMock(name="context")
 
 
-@pytest.mark.parametrize("body,headers", (
-    ("text=helloworld", None),
+def test_SlackAuthenticationCheck_calls_wrapped_fxn(signing_secret,
+                                                    event,
+                                                    context):
+    """Assert SlackAuthenticationCheck() calls the wrapped callable.
+
+    Incoming Command: Assert public side effects.
+    """
+    lambda_handler = MagicMock()
+    authorizer = SlackAuthenticationCheck(signing_secret)
+    wrapped_handler = authorizer(lambda_handler)
+    wrapped_handler(event, context)
+
+    lambda_handler.assert_called_once_with(event, context)
+
+
+def test_failed_auth_does_not_call_wrapped(signing_secret, event, context):
+    """Assert SlackAuthenticationCheck() calls the wrapped callable.
+
+    Incoming Command: Assert public side effects.
+    """
+    event["body"] = "hello world"
+
+    lambda_handler = MagicMock()
+    authorizer = SlackAuthenticationCheck(signing_secret)
+    wrapped_handler = authorizer(lambda_handler)
+    wrapped_handler(event, context)
+
+    lambda_handler.assert_not_called()
+
+
+@pytest.mark.parametrize("headers", [
     # Missing required headers
-    (None, {"X-Slack-Signature": None}),
-    (None, {"X-Slack-Request-Timestamp": None}),
+    {"X-Slack-Signature": None},
+    {"X-Slack-Request-Timestamp": None},
     # Mismatching X-Slack-Signature
-    (None, {"X-Slack-Signature": "v0=ac86bcd8b786a8b0871323abcbade312f13ad"}),
+    {"X-Slack-Signature": "v0=ac86bcd8b786a8b0871323abcbade312f13ad"},
     # Request-Timestamp doesn't match the signed header
-    (None, {"X-Slack-Request-Timestamp": f"{TIMESTAMP + 600}"}),
-))
-def test_SlackAuthenticationCheck_failures(signing_secret, request_dict, body,
-                                           headers):
-    """Tests that headers with mismatching bodies raise ForbiddenException."""
-    check = authorizer.SlackAuthenticationCheck(signing_secret)
+    {"X-Slack-Request-Timestamp": f"{TIMESTAMP + 600}"},
+])
+def test_wrapped_fxn_returns_403_with_missing_or_invalid_headers(
+    signing_secret,
+    event,
+    headers,
+    context,
+):
+    """Tests that the exact slack example returns a 200."""
+    event["headers"].update(headers)
+    event["headers"] = {
+        k: v for k, v in event["headers"].items() if v is not None
+    }
 
-    if body is not None:
-        request_dict["body"] = body
+    lambda_handler = MagicMock()
+    authorizer = SlackAuthenticationCheck(signing_secret)
+    wrapped_handler = authorizer(lambda_handler)
+    response = wrapped_handler(event, context)
 
-    if headers is not None:
-        request_dict["headers"].update(headers)
-        request_dict["headers"] = {
-            k: v for k, v in request_dict["headers"].items() if v is not None
-        }
-
-    with pytest.raises(authorizer.ForbiddenException):
-        check(request_dict)
+    assert response["statusCode"] == 403
 
 
 @pytest.mark.parametrize("age_in_seconds", [
@@ -95,10 +124,12 @@ def test_SlackAuthenticationCheck_old_request_timestamp(
     age_in_seconds,
     signing_secret,
     timestamp,
+    context,
 ):
-    """Tests that SlackAuthenticationCheck denies old requests."""
-    check = authorizer.SlackAuthenticationCheck(signing_secret)
+    """Assert wrapped function returns 403 if the timestamp is too lod.
 
+    Incoming Query: Assert Response
+    """
     body = "hello world"
     request_timestamp = timestamp - age_in_seconds
 
@@ -107,7 +138,7 @@ def test_SlackAuthenticationCheck_old_request_timestamp(
                               sha256)
     signature = b"v0=" + signature_hmac.hexdigest().encode()
 
-    request = {
+    event = {
         "body": body,
         "headers": {
             "X-Slack-Signature": signature.decode(),
@@ -115,5 +146,9 @@ def test_SlackAuthenticationCheck_old_request_timestamp(
         },
     }
 
-    with pytest.raises(authorizer.ForbiddenException):
-        check(request)
+    lambda_handler = MagicMock()
+    authorizer = SlackAuthenticationCheck(signing_secret)
+    wrapped_handler = authorizer(lambda_handler)
+    response = wrapped_handler(event, context)
+
+    assert response["statusCode"] == 403

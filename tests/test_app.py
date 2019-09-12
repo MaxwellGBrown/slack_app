@@ -1,22 +1,16 @@
 """Tests for complaint_counter.py."""
-import contextlib
 from hashlib import sha256
 import hmac
+import json
 import time
 from unittest.mock import Mock
 from urllib.parse import urlencode
 
-import pytest
-
-from slack_app.app import App
-from slack_app.authorizer import ForbiddenException
+from slack_app.app import SlashCommands
 
 
-def make_request(body=None, headers=None, *, secret=None, timestamp=None):
-    """Create a request that resembles a slack-API request.
-
-    By default, this function returns a valid request that should result in a
-    200 OK.
+def slash_command_event(body=None, headers=None, *, secret=None, timestamp=None):  # noqa
+    """Construct an event that resembles a slack slash command.
 
     To specify the lack of a default header, specify None as it's value.
     """
@@ -58,7 +52,7 @@ def make_request(body=None, headers=None, *, secret=None, timestamp=None):
     headers = {k: v for k, v in headers.items() if v is not None}
 
     _leading_slash, command_name = body["command"].split("/")
-    return {
+    event = {
         "body": urlencoded_body,
         "headers": headers,
         "requestContext": {"resourcePath": f"/slash_command"},
@@ -66,64 +60,59 @@ def make_request(body=None, headers=None, *, secret=None, timestamp=None):
         "resource": f"/slash_command",
         "httpMethod": "POST",
     }
+    return event, body
 
 
-@pytest.fixture
-def auth_check():
-    """Mock out and return an auth check to be injected into lambda_handler."""
-    auth_check = Mock(return_value=None)
-    return auth_check
+def test_SlashCommands_calls_registered_command():
+    """Assert registered command gets called.
 
-
-@pytest.fixture
-def app(auth_check):
-    """Return an instance of App() with stubs."""
-    app = App()
-    app.auth_check = auth_check
-    return app
-
-
-def test_app_returns_200(app):
-    """Test that lambda_handler returns a 200 status code."""
-    request = make_request()
-    response = app(request, None)
-    assert response['statusCode'] == 200
-
-
-def test_app_returns_403_with_failed_auth_check(app):
-    """Test that lambda_handler returns a 403 when auth_check raises."""
-    auth_check = Mock(side_effect=ForbiddenException())
-    app.auth_check = auth_check
-
-    request = make_request()
-    response = app(request, None)
-    assert response["statusCode"] == 403
-
-
-@pytest.mark.parametrize("command", ["/foo", "/bar", "/hello_world"])
-def test_app_routes_registered_slash_commands(app, command):
-    """Assert registered slash commands are called when the body matches.
-
-    Incoming Command: Assert public side effects.
+    Outgoing Command: Assert command sent
     """
-    command_fxn = Mock(return_value=dict())
-    app.slash_command(command, command_fxn)
+    slash_commands = SlashCommands()
+    command = Mock(return_value=dict())
+    slash_commands.commands["/foo"] = command
 
-    event = make_request({"command": command})
-    app(event, None)
-    command_fxn.assert_called_once()
+    event, raw_body = slash_command_event({"command": "/foo"})
+    slash_commands(event, None)
+
+    command.assert_called_once_with(raw_body)
 
 
-@pytest.mark.parametrize("command,success", [
-    ("wrong", False),
-    ("bad", False),
-    ("/good", True),
-])
-def test_app_slash_command_requires_leading_slash(app, command, success):
-    """Assert App.slash_command() requires leading slashes.
+def test_SlashCommands_use_command_response_as_json_body():
+    """Assert response from registered commands is json dumped as body.
 
-    Incoming Command: Assert public side effect.
+    Incoming Query: Assert response.
     """
-    context = pytest.raises(ValueError) if not success else contextlib.nullcontext()  # noqa
-    with context:
-        app.slash_command(command, Mock())
+    slash_commands = SlashCommands()
+    command = Mock(return_value={"hello": "world"})
+    slash_commands.commands["/foo"] = command
+
+    event, raw_body = slash_command_event({"command": "/foo"})
+    response = slash_commands(event, None)
+
+    assert response["statusCode"] == 200
+    assert response["body"] == json.dumps({"hello": "world"})
+
+
+def test_SlashCommands_returns_misconfiguration_message():
+    """Assert commands that aren't registered return a 200 message.
+
+    Incoming Query: Assert response.
+    """
+    slash_commands = SlashCommands()
+    event, raw_body = slash_command_event({"command": "/broken"})
+    response = slash_commands(event, None)
+
+    assert response["statusCode"] == 200
+    assert response["body"] == json.dumps({
+        "blocks": [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "Command `/broken` is registered in the Slack App,"
+                            " but not implemented on the API."
+                },
+            }
+        ]
+    })

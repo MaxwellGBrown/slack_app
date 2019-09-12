@@ -22,7 +22,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       AutoPublishAlias: Prod
-      Handler: slack_app.app
+      Handler: slack_app.slash_commands
       Runtime: python3.7
       Environment:
         Variables:

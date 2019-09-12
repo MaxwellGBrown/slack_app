@@ -1,6 +1,7 @@
 """Authentication checks for Lambda API gateway requests."""
 from hashlib import sha256
 import hmac
+import json
 import time
 
 
@@ -30,9 +31,24 @@ class SlackAuthenticationCheck(object):
         self.version = version
         self.request_leeway = request_leeway
 
-    def __call__(self, request):
+    def __call__(self, handler):
+        """Return a decorated handler that is wrapped by an auth check."""
+        def _handler(event, context):
+            try:
+                self._check(event)
+            except ForbiddenException as auth_error:
+                return {
+                    "statusCode": 403,
+                    "headers": dict(),
+                    "body": json.dumps(auth_error.args)
+                }
+
+            return handler(event, context)
+        return _handler
+
+    def _check(self, event):
         """Raise an exception if request is unauthorized."""
-        headers = request.get("headers", dict())
+        headers = event.get("headers", dict())
 
         for required_header in self.required_headers:
             if required_header not in headers:
@@ -45,7 +61,7 @@ class SlackAuthenticationCheck(object):
             raise ForbiddenException("X-Slack-Request-Timestamp is too old")
 
         # Check X-Slack-Signature
-        raw_signature = f"{self.version}:{timestamp}:{request['body']}"
+        raw_signature = f"{self.version}:{timestamp}:{event['body']}"
         signature_hmac = hmac.new(self.secret.encode(), raw_signature.encode(),
                                   sha256)
         signature = f"{self.version}={signature_hmac.hexdigest()}".encode()

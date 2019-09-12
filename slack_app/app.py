@@ -2,34 +2,20 @@
 import json
 import urllib.parse
 
-from .authorizer import ForbiddenException
 
+class SlashCommands:
+    """Lambda Handler to register, parse, and route slack slash commands."""
 
-class App:
-    """Configurable application to handle API Gateway lambda events."""
-
-    def __init__(self):
-        """Instantiate with configurable options."""
-        self.auth_check = lambda x: None
-        self._commands = dict()
+    def __init__(self, slash_commands=None):
+        """Take in slash commands by their name."""
+        self.commands = slash_commands if slash_commands else dict()
 
     def __call__(self, event, context):
-        """Handle event and return API Gateway response."""
-        # As of 2019-10-11, there is no way to access the request body in an
-        # API Gateway Custom Lambda Authorizer. Thus, authentication here.
-        try:
-            self.auth_check(event)
-        except ForbiddenException as auth_error:
-            return {
-                "statusCode": 403,
-                "headers": dict(),
-                "body": json.dumps(auth_error.args)
-            }
-
+        """Parse request body & call registerd command."""
         command_body = self._parse_command_body(event["body"])
-        command = self._commands.get(command_body["command"], self._command_not_configured)  # noqa
-        response_body = command(command_body)
+        command = self.commands.get(command_body["command"], self._command_not_configured)  # noqa
 
+        response_body = command(command_body)
         return {
             "statusCode": 200,
             "headers": dict(),
@@ -45,7 +31,8 @@ class App:
                     "text": {
                         "type": "mrkdwn",
                         "text": f"Command `{command_body['command']}` is "
-                                "not implemented."
+                                "registered in the Slack App, but not "
+                                "implemented on the API."
                     },
                 }
             ]
@@ -54,12 +41,8 @@ class App:
     @staticmethod
     def _parse_command_body(request_body):
         parsed_body = urllib.parse.parse_qs(request_body)
+        # an empty qs will omit the key on parse, but it's valid to put no text
+        parsed_body.setdefault("text", [""])
+
         # query strings can be multiple; just take the first of each found
         return {k: v[0] for k, v in parsed_body.items()}
-
-    def slash_command(self, command_name, command):
-        """Register a command to be called."""
-        if command_name[0] != "/":
-            raise ValueError(f"command_name {command_name:!r} must begin with "
-                             "a leading slash.")
-        self._commands[command_name] = command
