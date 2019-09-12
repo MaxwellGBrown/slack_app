@@ -33,7 +33,7 @@ Resources:
           Properties:
             RestApiId: !Ref SlackAppApi
             Method: post
-            Path: /slack/slash_command/{command_name}
+            Path: /slack/slash_command
 
 Outputs:
   SlackAppApi:

@@ -26,9 +26,8 @@ class App:
                 "body": json.dumps(auth_error.args)
             }
 
-        command_name = event["pathParameters"]["command_name"]
         command_body = self._parse_command_body(event["body"])
-        command = self._commands.get(command_name, self._command_not_configured)  # noqa
+        command = self._commands.get(command_body["command"], self._command_not_configured)  # noqa
         response_body = command(command_body)
 
         return {
@@ -45,7 +44,7 @@ class App:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": f"Command `/{command_body['command']}` is "
+                        "text": f"Command `{command_body['command']}` is "
                                 "not implemented."
                     },
                 }

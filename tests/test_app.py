@@ -60,12 +60,9 @@ def make_request(body=None, headers=None, *, secret=None, timestamp=None):
     return {
         "body": urlencoded_body,
         "headers": headers,
-        "requestContext": {
-            "resourcePath": f"/slash_command/{command_name}",
-        },
-        "path": f"/slash_command/{command_name}",
-        "pathParameters": {"command_name": command_name},
-        "resource": f"/slash_command/{command_name}",
+        "requestContext": {"resourcePath": f"/slash_command"},
+        "path": f"/slash_command",
+        "resource": f"/slash_command",
         "httpMethod": "POST",
     }
 
@@ -102,15 +99,15 @@ def test_app_returns_403_with_failed_auth_check(app):
     assert response["statusCode"] == 403
 
 
-@pytest.mark.parametrize("command_name", ["foo", "bar", "hello_world"])
-def test_app_routes_registered_slash_commands(app, command_name):
+@pytest.mark.parametrize("command", ["/foo", "/bar", "/hello_world"])
+def test_app_routes_registered_slash_commands(app, command):
     """Assert registered slash commands are called when the body matches.
 
     Incoming Command: Assert public side effects.
     """
-    command = Mock(return_value=dict())
-    app.slash_command(command_name, command)
+    command_fxn = Mock(return_value=dict())
+    app.slash_command(command, command_fxn)
 
-    event = make_request({"command": f"/{command_name}"})
+    event = make_request({"command": command})
     app(event, None)
-    command.assert_called_once()
+    command_fxn.assert_called_once()

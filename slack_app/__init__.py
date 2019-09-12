@@ -11,7 +11,7 @@ SIGNING_SECRET = os.environ.get("SIGNING_SECRET")
 app.auth_check = SlackAuthenticationCheck(SIGNING_SECRET)
 
 app.slash_command(
-    "slack_app",
+    "/slack_app",
     lambda x: {
         "blocks": [
             {
@@ -25,7 +25,7 @@ app.slash_command(
     }
 )
 app.slash_command(
-    "foo",
+    "/foo",
     lambda x: {
         "blocks": [
             {
