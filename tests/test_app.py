@@ -45,6 +45,7 @@ def make_request(body=None, headers=None, *, secret=None, timestamp=None):
     urlencoded_body = urlencode(body)
 
     headers.setdefault("X-Slack-Request-Timestamp", timestamp)
+    headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
 
     raw_signature = f"v0:{timestamp}:{urlencoded_body}"
     signature_hmac = hmac.new(secret.encode(), raw_signature.encode(), sha256)
@@ -55,9 +56,17 @@ def make_request(body=None, headers=None, *, secret=None, timestamp=None):
     # remove None values
     headers = {k: v for k, v in headers.items() if v is not None}
 
+    _leading_slash, command_name = body["command"].split("/")
     return {
         "body": urlencoded_body,
         "headers": headers,
+        "requestContext": {
+            "resourcePath": f"/slash_command/{command_name}",
+        },
+        "path": f"/slash_command/{command_name}",
+        "pathParameters": {"command_name": command_name},
+        "resource": f"/slash_command/{command_name}",
+        "httpMethod": "POST",
     }
 
 
@@ -91,3 +100,17 @@ def test_app_returns_403_with_failed_auth_check(app):
     request = make_request()
     response = app(request, None)
     assert response["statusCode"] == 403
+
+
+@pytest.mark.parametrize("command_name", ["foo", "bar", "hello_world"])
+def test_app_routes_registered_slash_commands(app, command_name):
+    """Assert registered slash commands are called when the body matches.
+
+    Incoming Command: Assert public side effects.
+    """
+    command = Mock(return_value=dict())
+    app.slash_command(command_name, command)
+
+    event = make_request({"command": f"/{command_name}"})
+    app(event, None)
+    command.assert_called_once()
